@@ -15,7 +15,7 @@ import {
   toggleBlock,
   deletePost,
   dedupeTimelineItems,
-  mergeNewTimelineItems,
+  countNewTimelineItems,
   groupNotificationItems,
 } from './client.js'
 import { toTimelineItems } from './format.js'
@@ -702,27 +702,43 @@ function makeNotification(overrides: Partial<NotificationItem> = {}): Notificati
   }
 }
 
-describe('mergeNewTimelineItems', () => {
-  it('新着があれば先頭に追加しindexを新着件数分加算する', () => {
-    const existing = [makeItem('at://p/b'), makeItem('at://p/a')]
-    const seenUris = new Set(existing.map((it) => it.post.uri))
-    const newPage = [makeItem('at://p/d'), makeItem('at://p/c'), makeItem('at://p/b')]
+describe('countNewTimelineItems', () => {
+  it('新着が無ければ0を返す', () => {
+    const seenUris = new Set(['at://p/a'])
+    const newPage = [makeItem('at://p/a')]
 
-    const result = mergeNewTimelineItems(existing, 1, newPage, seenUris)
-
-    expect(result.items.map((it) => it.post.uri)).toEqual(['at://p/d', 'at://p/c', 'at://p/b', 'at://p/a'])
-    expect(result.index).toBe(3)
+    expect(countNewTimelineItems(newPage, seenUris)).toBe(0)
   })
 
-  it('新着が無ければitems/indexとも変化しない', () => {
-    const existing = [makeItem('at://p/b'), makeItem('at://p/a')]
-    const seenUris = new Set(existing.map((it) => it.post.uri))
-    const newPage = [makeItem('at://p/b'), makeItem('at://p/a')]
+  it('新着があればその件数を返す', () => {
+    const seenUris = new Set(['at://p/a'])
+    const newPage = [makeItem('at://p/c'), makeItem('at://p/b'), makeItem('at://p/a')]
 
-    const result = mergeNewTimelineItems(existing, 1, newPage, seenUris)
+    expect(countNewTimelineItems(newPage, seenUris)).toBe(2)
+  })
 
-    expect(result.items).toBe(existing)
-    expect(result.index).toBe(1)
+  it('seenRootUrisを渡すと、既読スレッドへの新しい返信はカウントされない', () => {
+    const a = makePost('at://p/a')
+    const y = makePost('at://p/y')
+    const seenUris = new Set(['at://p/a'])
+    const seenRootUris = new Set(['at://p/a'])
+    const newPage: TimelineItem[] = [
+      { post: a, connectsToNext: true, sliceKey: 'y', rootUri: 'at://p/a' },
+      { post: y, replyToHandle: 'author-of-a', sliceKey: 'y', rootUri: 'at://p/a' },
+    ]
+
+    expect(countNewTimelineItems(newPage, seenUris, seenRootUris)).toBe(0)
+  })
+
+  it('呼び出し後もseenUris/seenRootUrisは変更されない(dry run)', () => {
+    const seenUris = new Set(['at://p/a'])
+    const seenRootUris = new Set(['at://p/a'])
+    const newPage = [makeItem('at://p/b')]
+
+    countNewTimelineItems(newPage, seenUris, seenRootUris)
+
+    expect(seenUris).toEqual(new Set(['at://p/a']))
+    expect(seenRootUris).toEqual(new Set(['at://p/a']))
   })
 })
 

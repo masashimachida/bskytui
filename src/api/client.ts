@@ -135,19 +135,17 @@ export function dedupeTimelineItems(items: TimelineItem[], seenUris: Set<string>
   return result
 }
 
-// タイムライン自動更新用。先頭ページ取得結果(newPageItems)から未見の投稿だけを
-// 抽出しitemsの先頭に追加する。全置換しないため、下にスクロールして古い投稿を
-// 見ている間でも選択中indexがずれない(新着件数分を加算するだけで位置を維持できる)。
-export function mergeNewTimelineItems(
-  items: TimelineItem[],
-  index: number,
+
+// タイムライン自動更新の新着チェック用。実際にitems/seenUris/seenRootUrisを
+// 変更せず(dry run)、新着として表示されるはずの件数だけを返す。
+export function countNewTimelineItems(
   newPageItems: TimelineItem[],
   seenUris: Set<string>,
   seenRootUris?: Set<string>,
-): { items: TimelineItem[]; index: number } {
-  const newItems = dedupeTimelineItems(newPageItems, seenUris, seenRootUris)
-  if (newItems.length === 0) return { items, index }
-  return { items: [...newItems, ...items], index: index + newItems.length }
+): number {
+  const dryRunSeenUris = new Set(seenUris)
+  const dryRunSeenRootUris = seenRootUris ? new Set(seenRootUris) : undefined
+  return dedupeTimelineItems(newPageItems, dryRunSeenUris, dryRunSeenRootUris).length
 }
 
 const GROUPABLE_NOTIFICATION_REASONS: NotificationItem['reason'][] = ['like', 'repost', 'follow']

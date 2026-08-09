@@ -8,7 +8,7 @@ import {
   dedupeTimelineItems,
   deletePost,
   fetchFeed,
-  mergeNewTimelineItems,
+  countNewTimelineItems,
   toggleLike,
   toggleRepost,
 } from '../api/client.js'
@@ -58,10 +58,13 @@ export function FeedScreen({
   const [cursor, setCursor] = useState<string | undefined>(initialCursor)
   const [index, setIndex] = useState(initialIndex)
   const [loading, setLoading] = useState(initialItems.length === 0)
-  const [error, setError] = useState<string>()
+  const [loadError, setLoadError] = useState<string>()
+  const [actionError, setActionError] = useState<string>()
   const [isLoadingMore, setIsLoadingMore] = useState(false)
   const isLoadingMoreRef = useRef(false)
+  const retryRef = useRef<() => void>(() => {})
   const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null)
+  const [hasNewItems, setHasNewItems] = useState(false)
   // TimelineScreenと同じ理由でseenUris/seenRootUrisをページをまたいで永続化する。
   const seenUrisRef = useRef<Set<string>>(new Set(initialItems.map((it) => it.post.uri)))
   const seenRootUrisRef = useRef<Set<string>>(
@@ -80,9 +83,10 @@ export function FeedScreen({
       const deduped = dedupeTimelineItems(page.items, seenUrisRef.current, seenRootUrisRef.current)
       setItems((prev) => [...prev, ...deduped])
       setCursor(page.cursor)
-      setError(undefined)
+      setLoadError(undefined)
     } catch {
-      setError('接続エラー — rで再試行')
+      retryRef.current = loadMore
+      setLoadError('接続エラー — rで再試行')
     } finally {
       setLoading(false)
       isLoadingMoreRef.current = false
@@ -91,34 +95,45 @@ export function FeedScreen({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [client, feedUri, cursor])
 
-  // silent=trueはタイマーによるバックグラウンド自動更新。ローディング表示やエラー
-  // 表示を出さず、失敗時は次回のタイマー発火に任せて黙って諦める。
-  const reloadFeed = useCallback(
-    async (silent = false) => {
-      if (isLoadingMoreRef.current) return
-      isLoadingMoreRef.current = true
-      if (!silent) setIsLoadingMore(true)
-      try {
-        const page = await fetchFeed(client, feedUri, undefined)
-        const merged = mergeNewTimelineItems(
-          latestStateRef.current.items,
-          latestStateRef.current.index,
-          page.items,
-          seenUrisRef.current,
-          seenRootUrisRef.current,
-        )
-        setItems(merged.items)
-        setIndex(merged.index)
-        if (!silent) setError(undefined)
-      } catch {
-        if (!silent) setError('接続エラー — rで再試行')
-      } finally {
-        isLoadingMoreRef.current = false
-        if (!silent) setIsLoadingMore(false)
-      }
-    },
-    [client, feedUri],
-  )
+  const reloadFeed = useCallback(async () => {
+    if (isLoadingMoreRef.current) return
+    isLoadingMoreRef.current = true
+    setIsLoadingMore(true)
+    try {
+      const page = await fetchFeed(client, feedUri, undefined)
+      const newSeenUris = new Set<string>()
+      const newSeenRootUris = new Set<string>()
+      const rebuilt = dedupeTimelineItems(page.items, newSeenUris, newSeenRootUris)
+      seenUrisRef.current = newSeenUris
+      seenRootUrisRef.current = newSeenRootUris
+      const prevTopUri = latestStateRef.current.items[0]?.post.uri
+      const restoredIndex = prevTopUri ? rebuilt.findIndex((it) => it.post.uri === prevTopUri) : -1
+      setItems(rebuilt)
+      setIndex(restoredIndex >= 0 ? restoredIndex : 0)
+      setCursor(page.cursor)
+      setHasNewItems(false)
+      setLoadError(undefined)
+    } catch {
+      retryRef.current = reloadFeed
+      setLoadError('接続エラー — rで再試行')
+    } finally {
+      isLoadingMoreRef.current = false
+      setIsLoadingMore(false)
+    }
+  }, [client, feedUri])
+
+  // 60秒タイマー用。実際にitemsは書き換えず、新着があるかだけ確認して
+  // hasNewItemsを更新する。失敗時は次回のタイマー発火に任せて黙って諦める。
+  const checkForNewItems = useCallback(async () => {
+    if (isLoadingMoreRef.current) return
+    try {
+      const page = await fetchFeed(client, feedUri, undefined)
+      const count = countNewTimelineItems(page.items, seenUrisRef.current)
+      if (count > 0) setHasNewItems(true)
+    } catch {
+      // 黙って諦める
+    }
+  }, [client, feedUri])
 
   useEffect(() => {
     if (initialItems.length === 0) {
@@ -127,12 +142,12 @@ export function FeedScreen({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const reloadFeedRef = useRef(reloadFeed)
-  reloadFeedRef.current = reloadFeed
+  const checkForNewItemsRef = useRef(checkForNewItems)
+  checkForNewItemsRef.current = checkForNewItems
 
   useEffect(() => {
     const interval = setInterval(() => {
-      reloadFeedRef.current(true)
+      checkForNewItemsRef.current()
     }, AUTO_REFRESH_INTERVAL_MS)
     return () => clearInterval(interval)
   }, [])
@@ -143,12 +158,16 @@ export function FeedScreen({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  useStatusMessage(onStatusChange, loading || isLoadingMore ? '読み込み中...' : undefined, error)
+  useStatusMessage(
+    onStatusChange,
+    loading || isLoadingMore ? '読み込み中...' : hasNewItems ? '新着あり — ↑で更新' : undefined,
+    loadError ?? actionError,
+  )
 
   useInput(
     (input, key) => {
-      if (error && items.length === 0) {
-        if (input === 'r') loadMore()
+      if (loadError) {
+        if (input === 'r') retryRef.current()
         return
       }
 
@@ -226,20 +245,20 @@ export function FeedScreen({
                 setIndex((i) => Math.min(i, Math.max(0, next.length - 1)))
                 return next
               })
-              setError(undefined)
+              setActionError(undefined)
             })
             .catch(() => {
-              setError('削除に失敗しました')
+              setActionError('削除に失敗しました')
             })
         }
         if (action.type === 'repost') {
           toggleRepost(client, action.post)
             .then((patch) => {
               setItems((prev) => prev.map((it) => (it.post.uri === action.post.uri ? { ...it, post: { ...it.post, ...patch } } : it)))
-              setError(undefined)
+              setActionError(undefined)
             })
             .catch(() => {
-              setError('リポストに失敗しました')
+              setActionError('リポストに失敗しました')
             })
         }
         return
