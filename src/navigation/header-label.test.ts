@@ -18,19 +18,6 @@ describe('getHeaderLabel', () => {
     expect(getHeaderLabel({ name: 'profile', actor: 'did:plc:1' })).toBe('Profile')
   })
 
-  it('composeでreplyTo無しはCompose', () => {
-    expect(getHeaderLabel({ name: 'compose' })).toBe('Compose')
-  })
-
-  it('composeでreplyTo有りはReply', () => {
-    expect(
-      getHeaderLabel({
-        name: 'compose',
-        replyTo: { root: { uri: 'r', cid: 'rc' }, parent: { uri: 'p', cid: 'pc' } },
-      }),
-    ).toBe('Reply')
-  })
-
   it('feed-listはFeeds', () => {
     expect(getHeaderLabel({ name: 'feed-list' })).toBe('Feeds')
   })

@@ -8,11 +8,13 @@ import { LoginScreen } from './screens/LoginScreen.js'
 import { TimelineScreen } from './screens/TimelineScreen.js'
 import { ThreadScreen } from './screens/ThreadScreen.js'
 import { ComposeScreen } from './screens/ComposeScreen.js'
+import type { ComposeReplyTarget, ComposeQuoteTarget } from './screens/ComposeScreen.js'
 import { NotificationsScreen } from './screens/NotificationsScreen.js'
 import { ProfileScreen } from './screens/ProfileScreen.js'
 import { FeedListScreen } from './screens/FeedListScreen.js'
 import { FeedScreen } from './screens/FeedScreen.js'
 import { HelpOverlay } from './components/HelpOverlay.js'
+import { Modal } from './components/Modal.js'
 import { HeaderBar } from './components/HeaderBar.js'
 import { getHeaderLabel } from './navigation/header-label.js'
 import { fetchUnreadCount } from './api/client.js'
@@ -33,6 +35,10 @@ export function App() {
     cursor: string | undefined
     index: number
   }>({ items: [], cursor: undefined, index: 0 })
+  const [composeState, setComposeState] = useState<{
+    replyTo?: ComposeReplyTarget
+    quoteTarget?: ComposeQuoteTarget
+  } | null>(null)
   const [threadState, setThreadState] = useState<{ uri: string; posts: PostSummary[]; index: number } | null>(null)
   const [notificationsState, setNotificationsState] = useState<{
     items: NotificationItem[]
@@ -140,7 +146,7 @@ export function App() {
     (input) => {
       if (input === '?') setShowHelp(true)
     },
-    { isActive: !showHelp && top.name !== 'login' && top.name !== 'compose' },
+    { isActive: !showHelp && top.name !== 'login' && !composeState },
   )
 
   useInput(
@@ -176,34 +182,25 @@ export function App() {
     dispatch({ type: 'push', screen: { name: 'feed', uri: feed.uri, displayName: feed.displayName } })
   }
   function openCompose(replyTarget?: PostSummary, replyRoot?: PostSummary) {
-    dispatch({
-      type: 'push',
-      screen: {
-        name: 'compose',
-        replyTo: replyTarget
-          ? {
-              root: { uri: (replyRoot ?? replyTarget).uri, cid: (replyRoot ?? replyTarget).cid },
-              parent: { uri: replyTarget.uri, cid: replyTarget.cid },
-            }
-          : undefined,
-      },
+    setComposeState({
+      replyTo: replyTarget
+        ? {
+            root: { uri: (replyRoot ?? replyTarget).uri, cid: (replyRoot ?? replyTarget).cid },
+            parent: { uri: replyTarget.uri, cid: replyTarget.cid },
+          }
+        : undefined,
     })
   }
   function openQuoteCompose(post: PostSummary) {
-    dispatch({
-      type: 'push',
-      screen: {
-        name: 'compose',
-        quoteTarget: { uri: post.uri, cid: post.cid, author: post.author, text: post.text },
-      },
+    setComposeState({
+      quoteTarget: { uri: post.uri, cid: post.cid, author: post.author, text: post.text },
     })
   }
   function pop() {
     dispatch({ type: 'pop' })
   }
   function handleComposeDone() {
-    setTimelineState({ items: [], cursor: undefined, index: 0 })
-    pop()
+    setComposeState(null)
   }
 
   function switchToProfile() {
@@ -235,7 +232,7 @@ export function App() {
         switchToProfile()
       }
     },
-    { isActive: !showHelp && top.name !== 'login' && top.name !== 'compose' && top.name !== 'thread' },
+    { isActive: !showHelp && top.name !== 'login' && !composeState && top.name !== 'thread' },
   )
 
   return (
@@ -259,7 +256,7 @@ export function App() {
             {client && top.name === 'timeline' && (
               <TimelineScreen
                 client={client}
-                active={true}
+                active={!composeState}
                 initialItems={timelineState.items}
                 initialCursor={timelineState.cursor}
                 initialIndex={timelineState.index}
@@ -275,7 +272,7 @@ export function App() {
             {client && top.name === 'notifications' && (
               <NotificationsScreen
                 client={client}
-                active={true}
+                active={!composeState}
                 initialItems={notificationsState.items}
                 initialCursor={notificationsState.cursor}
                 initialIndex={notificationsState.index}
@@ -290,7 +287,7 @@ export function App() {
               <ThreadScreen
                 client={client}
                 uri={top.uri}
-                active={true}
+                active={!composeState}
                 initialPosts={threadState?.uri === top.uri ? threadState.posts : []}
                 initialIndex={threadState?.uri === top.uri ? threadState.index : 0}
                 onStateChange={(posts, index) => setThreadState({ uri: top.uri, posts, index })}
@@ -305,21 +302,11 @@ export function App() {
                 onStatusChange={setStatusMessage}
               />
             )}
-            {client && top.name === 'compose' && (
-              <ComposeScreen
-                client={client}
-                replyTo={top.replyTo}
-                quoteTarget={top.quoteTarget}
-                onDone={handleComposeDone}
-                onCancel={pop}
-                onStatusChange={setStatusMessage}
-              />
-            )}
             {client && top.name === 'profile' && (
               <ProfileScreen
                 client={client}
                 actor={top.actor}
-                active={true}
+                active={!composeState}
                 onBack={pop}
                 onOpenThread={openThread}
                 onReply={(post) => openCompose(post)}
@@ -338,7 +325,7 @@ export function App() {
               <FeedScreen
                 client={client}
                 feedUri={top.uri}
-                active={true}
+                active={!composeState}
                 initialItems={feedState?.uri === top.uri ? feedState.items : []}
                 initialCursor={feedState?.uri === top.uri ? feedState.cursor : undefined}
                 initialIndex={feedState?.uri === top.uri ? feedState.index : 0}
@@ -350,6 +337,18 @@ export function App() {
                 onQuote={openQuoteCompose}
                 onStatusChange={setStatusMessage}
               />
+            )}
+            {client && composeState && (
+              <Modal width={76} height={composeState.quoteTarget ? 15 : 9}>
+                <ComposeScreen
+                  client={client}
+                  replyTo={composeState.replyTo}
+                  quoteTarget={composeState.quoteTarget}
+                  onDone={handleComposeDone}
+                  onCancel={() => setComposeState(null)}
+                  onStatusChange={setStatusMessage}
+                />
+              </Modal>
             )}
           </>
         )}

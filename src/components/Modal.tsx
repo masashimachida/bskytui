@@ -39,6 +39,7 @@ export function Modal({
         width={w}
         height={h}
         flexDirection="column"
+        overflow="hidden"
       >
         {children}
       </Box>

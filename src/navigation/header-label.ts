@@ -12,8 +12,6 @@ export function getHeaderLabel(screen: ScreenId): string {
       return 'Thread'
     case 'profile':
       return 'Profile'
-    case 'compose':
-      return screen.replyTo ? 'Reply' : 'Compose'
     case 'feed-list':
       return 'Feeds'
     case 'feed':

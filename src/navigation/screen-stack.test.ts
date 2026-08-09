@@ -18,7 +18,7 @@ describe('screenStackReducer', () => {
   })
 
   it('resetでスタック全体を1件に置き換える', () => {
-    const three = { stack: [{ name: 'timeline' as const }, { name: 'thread' as const, uri: 'u' }, { name: 'compose' as const }] }
+    const three = { stack: [{ name: 'timeline' as const }, { name: 'thread' as const, uri: 'u' }, { name: 'notifications' as const }] }
     const state = screenStackReducer(three, { type: 'reset', screen: { name: 'notifications' } })
     expect(state.stack).toEqual([{ name: 'notifications' }])
   })

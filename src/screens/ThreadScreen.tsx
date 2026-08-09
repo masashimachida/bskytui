@@ -231,7 +231,7 @@ export function ThreadScreen({
 
       const current = posts[index]
       if (!current) return
-      if (action === 'reply') onReply(current, posts[0] ?? current)
+      if (action === 'reply') runAfterCollapse(() => onReply(current, posts[0] ?? current))
       if (action === 'view-author') onOpenProfile(current.author.did)
       if (action === 'open-link') {
         if (current.linkCard && isSafeExternalUrl(current.linkCard.uri)) open(current.linkCard.uri).catch(() => {})
@@ -248,7 +248,7 @@ export function ThreadScreen({
         setConfirmAction({ type: 'repost', post: current })
       }
       if (action === 'quote') {
-        onQuote(current)
+        runAfterCollapse(() => onQuote(current))
       }
     },
     { isActive: active && !confirmAction },
