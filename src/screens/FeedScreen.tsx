@@ -128,7 +128,7 @@ export function FeedScreen({
     if (isLoadingMoreRef.current) return
     try {
       const page = await fetchFeed(client, feedUri, undefined)
-      const count = countNewTimelineItems(page.items, seenUrisRef.current)
+      const count = countNewTimelineItems(page.items, seenUrisRef.current, seenRootUrisRef.current)
       if (count > 0) setHasNewItems(true)
     } catch {
       // 黙って諦める
@@ -162,6 +162,7 @@ export function FeedScreen({
     onStatusChange,
     loading || isLoadingMore ? '読み込み中...' : hasNewItems ? '新着あり — ↑で更新' : undefined,
     loadError ?? actionError,
+    hasNewItems,
   )
 
   useInput(

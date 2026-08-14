@@ -246,7 +246,9 @@ export function App() {
               <>
                 <HeaderBar label={getHeaderLabel(top)} count={unreadCount} />
                 <Box justifyContent="flex-end">
-                  <Text color={statusMessage?.error ? 'red' : 'gray'}>{statusMessage?.text ?? ' '}</Text>
+                  <Text color={statusMessage?.error ? 'red' : statusMessage?.notice ? '#FFA500' : 'gray'}>
+                    {statusMessage?.text ?? ' '}
+                  </Text>
                 </Box>
               </>
             )}
