@@ -19,13 +19,15 @@ import { HeaderBar } from './components/HeaderBar.js'
 import { getHeaderLabel } from './navigation/header-label.js'
 import { fetchUnreadCount } from './api/client.js'
 import { resolveGlobalAction } from './keymap/global-keymap.js'
+import { ConfigProvider } from './config/ConfigContext.js'
+import type { Config } from './config/types.js'
 import type { StatusMessage } from './navigation/useStatusMessage.js'
 import type { AtpClient } from './api/atp-client.js'
 import type { FeedInfo, NotificationItem, PostSummary, TimelineItem } from './api/types.js'
 
 const UNREAD_POLL_INTERVAL_MS = 60000
 
-export function App() {
+export function App({ config }: { config: Config }) {
   const [stack, dispatch] = useReducer(screenStackReducer, initialScreenStackState)
   const [client, setClient] = useState<AtpClient | null>(null)
   const [loginError, setLoginError] = useState<string>()
@@ -144,7 +146,7 @@ export function App() {
 
   useInput(
     (input) => {
-      if (input === '?') setShowHelp(true)
+      if (input === config.keymap.help) setShowHelp(true)
     },
     { isActive: !showHelp && top.name !== 'login' && !composeState },
   )
@@ -208,14 +210,14 @@ export function App() {
     openProfile()
   }
 
-  // ThreadScreenは画像展開機能を持ち、画像が展開されたまま画面遷移すると
-  // ink-pictureの直接stdout書き込み方式のクリーンアップがInkの通常描画パイプラインと
-  // 競合し描画が残ってしまうため、ThreadScreen内で画像を閉じてから遷移する制御を行う。
-  // そのためThreadScreen表示中はswitch-*をここで処理せず、ThreadScreen側のローカル
-  // ハンドラに委ねる(TimelineScreen/FeedScreenは画像展開機能を持たないため対象外)。
+  // 画像展開機能を持つ画面(thread/timeline/notifications/feed/profile)は、画像が展開された
+  // まま画面遷移すると、ink-pictureの直接stdout書き込み方式のクリーンアップがInkの通常描画
+  // パイプラインと競合し描画が残ってしまう。そのため各画面内で画像を閉じてから遷移する制御を
+  // 行い、switch-*はここで処理せず各画面側のローカルハンドラに委ねる
+  // (feed-listは画像展開機能を持たないため対象外)。
   useInput(
     (input, key) => {
-      const action = resolveGlobalAction(input, key)
+      const action = resolveGlobalAction(input, key, config.keymap)
       if (action === 'switch-timeline' && top.name !== 'timeline') {
         switchToTimeline()
         return
@@ -232,129 +234,155 @@ export function App() {
         switchToProfile()
       }
     },
-    { isActive: !showHelp && top.name !== 'login' && !composeState && top.name !== 'thread' },
+    {
+      isActive:
+        !showHelp &&
+        top.name !== 'login' &&
+        !composeState &&
+        top.name !== 'thread' &&
+        top.name !== 'timeline' &&
+        top.name !== 'notifications' &&
+        top.name !== 'feed' &&
+        top.name !== 'profile',
+    },
   )
 
   return (
-    <InkPictureProvider config={{ pollIntervalMs: 3600000 }}>
-      <Box flexDirection="column">
-        {!sessionChecked && <Text dimColor>🦋起動中🦋</Text>}
-        {sessionChecked && showHelp && <HelpOverlay />}
-        {sessionChecked && !showHelp && (
-          <>
-            {top.name !== 'login' && (
-              <>
-                <HeaderBar label={getHeaderLabel(top)} count={unreadCount} />
-                <Box justifyContent="flex-end">
-                  <Text color={statusMessage?.error ? 'red' : statusMessage?.notice ? '#FFA500' : 'gray'}>
-                    {statusMessage?.text ?? ' '}
-                  </Text>
-                </Box>
-              </>
-            )}
-            {top.name === 'login' && (
-              <LoginScreen onSubmit={handleLoginSubmit} error={loginError} submitting={loggingIn} />
-            )}
-            {client && top.name === 'timeline' && (
-              <TimelineScreen
-                client={client}
-                active={!composeState}
-                initialItems={timelineState.items}
-                initialCursor={timelineState.cursor}
-                initialIndex={timelineState.index}
-                onStateChange={setTimelineState}
-                onOpenThread={openThread}
-                onReply={(post) => openCompose(post)}
-                onCompose={() => openCompose()}
-                onOpenProfile={openProfile}
-                onQuote={openQuoteCompose}
-                onStatusChange={setStatusMessage}
-              />
-            )}
-            {client && top.name === 'notifications' && (
-              <NotificationsScreen
-                client={client}
-                active={!composeState}
-                initialItems={notificationsState.items}
-                initialCursor={notificationsState.cursor}
-                initialIndex={notificationsState.index}
-                onStateChange={setNotificationsState}
-                onOpenThread={openThread}
-                onOpenProfile={openProfile}
-                onQuote={openQuoteCompose}
-                onStatusChange={setStatusMessage}
-              />
-            )}
-            {client && top.name === 'thread' && (
-              <ThreadScreen
-                client={client}
-                uri={top.uri}
-                active={!composeState}
-                initialPosts={threadState?.uri === top.uri ? threadState.posts : []}
-                initialIndex={threadState?.uri === top.uri ? threadState.index : 0}
-                onStateChange={(posts, index) => setThreadState({ uri: top.uri, posts, index })}
-                onReply={(post, root) => openCompose(post, root)}
-                onBack={pop}
-                onOpenProfile={openProfile}
-                onQuote={openQuoteCompose}
-                onSwitchTimeline={switchToTimeline}
-                onSwitchNotifications={switchToNotifications}
-                onSwitchFeeds={switchToFeedList}
-                onSwitchProfile={switchToProfile}
-                onStatusChange={setStatusMessage}
-              />
-            )}
-            {client && top.name === 'profile' && (
-              <ProfileScreen
-                client={client}
-                actor={top.actor}
-                active={!composeState}
-                onBack={pop}
-                onOpenThread={openThread}
-                onReply={(post) => openCompose(post)}
-                initialItems={profileState?.actor === top.actor ? profileState.items : []}
-                initialCursor={profileState?.actor === top.actor ? profileState.cursor : undefined}
-                initialIndex={profileState?.actor === top.actor ? profileState.index : 0}
-                onStateChange={(state) => setProfileState({ actor: top.actor, ...state })}
-                onQuote={openQuoteCompose}
-                onStatusChange={setStatusMessage}
-              />
-            )}
-            {client && top.name === 'feed-list' && (
-              <FeedListScreen client={client} active={true} onOpenFeed={openFeed} onStatusChange={setStatusMessage} />
-            )}
-            {client && top.name === 'feed' && (
-              <FeedScreen
-                client={client}
-                feedUri={top.uri}
-                active={!composeState}
-                initialItems={feedState?.uri === top.uri ? feedState.items : []}
-                initialCursor={feedState?.uri === top.uri ? feedState.cursor : undefined}
-                initialIndex={feedState?.uri === top.uri ? feedState.index : 0}
-                onStateChange={(state) => setFeedState({ uri: top.uri, ...state })}
-                onOpenThread={openThread}
-                onReply={(post) => openCompose(post)}
-                onCompose={() => openCompose()}
-                onOpenProfile={openProfile}
-                onQuote={openQuoteCompose}
-                onStatusChange={setStatusMessage}
-              />
-            )}
-            {client && composeState && (
-              <Modal width={76} height={composeState.quoteTarget ? 15 : 9}>
-                <ComposeScreen
+    <ConfigProvider config={config}>
+      <InkPictureProvider config={{ pollIntervalMs: 3600000, cacheSize: 50 }}>
+        <Box flexDirection="column">
+          {!sessionChecked && <Text dimColor>🦋起動中🦋</Text>}
+          {sessionChecked && showHelp && <HelpOverlay />}
+          {sessionChecked && !showHelp && (
+            <>
+              {top.name !== 'login' && (
+                <>
+                  <HeaderBar label={getHeaderLabel(top)} count={unreadCount} />
+                  <Box justifyContent="flex-end">
+                    <Text color={statusMessage?.error ? 'red' : statusMessage?.notice ? '#FFA500' : 'gray'}>
+                      {statusMessage?.text ?? ' '}
+                    </Text>
+                  </Box>
+                </>
+              )}
+              {top.name === 'login' && (
+                <LoginScreen onSubmit={handleLoginSubmit} error={loginError} submitting={loggingIn} />
+              )}
+              {client && top.name === 'timeline' && (
+                <TimelineScreen
                   client={client}
-                  replyTo={composeState.replyTo}
-                  quoteTarget={composeState.quoteTarget}
-                  onDone={handleComposeDone}
-                  onCancel={() => setComposeState(null)}
+                  active={!composeState}
+                  initialItems={timelineState.items}
+                  initialCursor={timelineState.cursor}
+                  initialIndex={timelineState.index}
+                  onStateChange={setTimelineState}
+                  onOpenThread={openThread}
+                  onReply={(post) => openCompose(post)}
+                  onCompose={() => openCompose()}
+                  onOpenProfile={openProfile}
+                  onQuote={openQuoteCompose}
+                  onSwitchNotifications={switchToNotifications}
+                  onSwitchFeeds={switchToFeedList}
+                  onSwitchProfile={switchToProfile}
                   onStatusChange={setStatusMessage}
                 />
-              </Modal>
-            )}
-          </>
-        )}
-      </Box>
-    </InkPictureProvider>
+              )}
+              {client && top.name === 'notifications' && (
+                <NotificationsScreen
+                  client={client}
+                  active={!composeState}
+                  initialItems={notificationsState.items}
+                  initialCursor={notificationsState.cursor}
+                  initialIndex={notificationsState.index}
+                  onStateChange={setNotificationsState}
+                  onOpenThread={openThread}
+                  onOpenProfile={openProfile}
+                  onQuote={openQuoteCompose}
+                  onSwitchTimeline={switchToTimeline}
+                  onSwitchFeeds={switchToFeedList}
+                  onSwitchProfile={switchToProfile}
+                  onStatusChange={setStatusMessage}
+                />
+              )}
+              {client && top.name === 'thread' && (
+                <ThreadScreen
+                  client={client}
+                  uri={top.uri}
+                  active={!composeState}
+                  initialPosts={threadState?.uri === top.uri ? threadState.posts : []}
+                  initialIndex={threadState?.uri === top.uri ? threadState.index : 0}
+                  onStateChange={(posts, index) => setThreadState({ uri: top.uri, posts, index })}
+                  onReply={(post, root) => openCompose(post, root)}
+                  onBack={pop}
+                  onOpenProfile={openProfile}
+                  onQuote={openQuoteCompose}
+                  onSwitchTimeline={switchToTimeline}
+                  onSwitchNotifications={switchToNotifications}
+                  onSwitchFeeds={switchToFeedList}
+                  onSwitchProfile={switchToProfile}
+                  onStatusChange={setStatusMessage}
+                />
+              )}
+              {client && top.name === 'profile' && (
+                <ProfileScreen
+                  client={client}
+                  actor={top.actor}
+                  active={!composeState}
+                  onBack={pop}
+                  onOpenThread={openThread}
+                  onReply={(post) => openCompose(post)}
+                  initialItems={profileState?.actor === top.actor ? profileState.items : []}
+                  initialCursor={profileState?.actor === top.actor ? profileState.cursor : undefined}
+                  initialIndex={profileState?.actor === top.actor ? profileState.index : 0}
+                  onStateChange={(state) => setProfileState({ actor: top.actor, ...state })}
+                  onQuote={openQuoteCompose}
+                  onSwitchTimeline={switchToTimeline}
+                  onSwitchNotifications={switchToNotifications}
+                  onSwitchFeeds={switchToFeedList}
+                  onSwitchProfile={switchToProfile}
+                  onStatusChange={setStatusMessage}
+                />
+              )}
+              {client && top.name === 'feed-list' && (
+                <FeedListScreen client={client} active={true} onOpenFeed={openFeed} onStatusChange={setStatusMessage} />
+              )}
+              {client && top.name === 'feed' && (
+                <FeedScreen
+                  client={client}
+                  feedUri={top.uri}
+                  active={!composeState}
+                  initialItems={feedState?.uri === top.uri ? feedState.items : []}
+                  initialCursor={feedState?.uri === top.uri ? feedState.cursor : undefined}
+                  initialIndex={feedState?.uri === top.uri ? feedState.index : 0}
+                  onStateChange={(state) => setFeedState({ uri: top.uri, ...state })}
+                  onOpenThread={openThread}
+                  onReply={(post) => openCompose(post)}
+                  onCompose={() => openCompose()}
+                  onOpenProfile={openProfile}
+                  onQuote={openQuoteCompose}
+                  onSwitchTimeline={switchToTimeline}
+                  onSwitchNotifications={switchToNotifications}
+                  onSwitchFeeds={switchToFeedList}
+                  onSwitchProfile={switchToProfile}
+                  onStatusChange={setStatusMessage}
+                />
+              )}
+              {client && composeState && (
+                <Modal width={76} height={composeState.quoteTarget ? 15 : 9}>
+                  <ComposeScreen
+                    client={client}
+                    replyTo={composeState.replyTo}
+                    quoteTarget={composeState.quoteTarget}
+                    onDone={handleComposeDone}
+                    onCancel={() => setComposeState(null)}
+                    onStatusChange={setStatusMessage}
+                  />
+                </Modal>
+              )}
+            </>
+          )}
+        </Box>
+      </InkPictureProvider>
+    </ConfigProvider>
   )
 }

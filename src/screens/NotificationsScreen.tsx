@@ -7,8 +7,10 @@ import { ScrollingViewport, OVERHEAD_ROWS } from '../components/ScrollingViewpor
 import { fetchNotifications, toggleRepost } from '../api/client.js'
 import { resolveListNavigation } from '../keymap/vim-list-keymap.js'
 import { resolveGlobalAction } from '../keymap/global-keymap.js'
-import { formatRelativeTime, postWebUrl } from '../api/format.js'
+import { formatPostDate, postWebUrl } from '../api/format.js'
 import { isSafeExternalUrl } from '../api/sanitize.js'
+import { useConfig } from '../config/ConfigContext.js'
+import { useImageExpand } from '../navigation/useImageExpand.js'
 import { useTerminalRows } from '../navigation/useTerminalRows.js'
 import { useStatusMessage } from '../navigation/useStatusMessage.js'
 import type { StatusMessage } from '../navigation/useStatusMessage.js'
@@ -36,6 +38,9 @@ export function NotificationsScreen({
   onOpenThread,
   onOpenProfile,
   onQuote,
+  onSwitchTimeline,
+  onSwitchFeeds,
+  onSwitchProfile,
   onStatusChange,
 }: {
   client: AtpClient
@@ -47,8 +52,12 @@ export function NotificationsScreen({
   onOpenThread: (uri: string) => void
   onOpenProfile: (actor?: string) => void
   onQuote: (post: PostSummary) => void
+  onSwitchTimeline: () => void
+  onSwitchFeeds: () => void
+  onSwitchProfile: () => void
   onStatusChange: (message: StatusMessage | null) => void
 }) {
+  const config = useConfig()
   const [items, setItems] = useState<NotificationItem[]>(initialItems)
   const [cursor, setCursor] = useState<string | undefined>(initialCursor)
   const [index, setIndex] = useState(initialIndex)
@@ -119,6 +128,8 @@ export function NotificationsScreen({
 
   useStatusMessage(onStatusChange, loading || isLoadingMore ? '読み込み中...' : undefined, error)
 
+  const imageExpand = useImageExpand(config.display.imageExpand, index, (items[index]?.subjectPost?.images.length ?? 0) > 0)
+
   useInput(
     (input, key) => {
       if (error && items.length === 0) {
@@ -126,7 +137,7 @@ export function NotificationsScreen({
         return
       }
 
-      const nav = resolveListNavigation(input, key)
+      const nav = resolveListNavigation(input, key, config.keymap)
       if (nav === 'down') {
         setIndex((i) => {
           const next = Math.min(items.length - 1, i + 1)
@@ -148,17 +159,29 @@ export function NotificationsScreen({
         return
       }
 
-      const action = resolveGlobalAction(input, key)
+      const action = resolveGlobalAction(input, key, config.keymap)
+      if (action === 'switch-timeline') {
+        imageExpand.collapseBeforeAction(onSwitchTimeline)
+        return
+      }
+      if (action === 'switch-feeds') {
+        imageExpand.collapseBeforeAction(onSwitchFeeds)
+        return
+      }
+      if (action === 'switch-profile') {
+        imageExpand.collapseBeforeAction(onSwitchProfile)
+        return
+      }
       if (action === 'open-thread') {
         const current = items[index]
         const canOpen =
           current && (current.reason === 'like' || current.reason === 'repost' || current.reason === 'quote' || current.reason === 'reply')
-        if (canOpen && current.subjectPost) onOpenThread(current.subjectPost.uri)
+        if (canOpen && current.subjectPost) imageExpand.collapseBeforeAction(() => onOpenThread(current.subjectPost!.uri))
         return
       }
       if (action === 'view-author') {
         const current = items[index]
-        if (current) onOpenProfile(current.author.did)
+        if (current) imageExpand.collapseBeforeAction(() => onOpenProfile(current.author.did))
       }
       if (action === 'open-link') {
         const current = items[index]
@@ -224,9 +247,9 @@ export function NotificationsScreen({
         items={items}
         selectedIndex={index}
         availableRows={availableRows}
-        isSelectedExpanded={false}
+        isSelectedExpanded={imageExpand.isExpanded(true)}
         getKey={(item) => item.uri}
-        renderItem={(item, selected) => {
+        renderItem={(item, selected, suppressImages) => {
           const showsPostItem = (item.reason === 'quote' || item.reason === 'reply') && item.subjectPost
           return (
             <Box flexDirection="column" width="100%">
@@ -248,7 +271,7 @@ export function NotificationsScreen({
                     {item.additionalAuthors && item.additionalAuthors.length > 0 && ` および他${item.additionalAuthors.length}人`}
                   </Text>
                   <Text bold={!item.isRead}> {REASON_LABEL[item.reason]}</Text>
-                  <Text color="#666666"> · {formatRelativeTime(item.indexedAt)}</Text>
+                  <Text color="#666666"> · {formatPostDate(item.indexedAt, config.display.dateFormat)}</Text>
                 </Box>
               )}
               {(item.reason === 'like' || item.reason === 'repost') && item.subjectPost && (
@@ -275,7 +298,7 @@ export function NotificationsScreen({
                 <PostItem
                   post={item.subjectPost!}
                   selected={selected}
-                  expanded={false}
+                  expanded={!suppressImages && imageExpand.isExpanded(selected)}
                   replyToHandle={item.reason === 'reply' ? item.replyToHandle : undefined}
                   replyIndent={false}
                 />

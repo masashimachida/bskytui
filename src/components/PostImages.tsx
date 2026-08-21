@@ -2,9 +2,9 @@ import React, { useEffect, useState } from 'react'
 import { Box, Text, useStdout } from 'ink'
 import Image, { useTerminalInfo } from 'ink-picture'
 import { calculateImageHeight } from './image-size.js'
+import { useConfig } from '../config/ConfigContext.js'
 import type { ImageAttachment } from '../api/types.js'
 
-const MAX_THUMB_WIDTH = 30
 const THUMB_HEIGHT = 12
 const MIN_THUMB_HEIGHT = 4
 const MAX_THUMB_HEIGHT = 20
@@ -12,6 +12,7 @@ const GAP = 1
 const HORIZONTAL_MARGIN = 8
 
 export function PostImages({ images, expanded }: { images: ImageAttachment[]; expanded: boolean }) {
+  const config = useConfig()
   const { stdout } = useStdout()
   const terminalInfo = useTerminalInfo()
   // expandedがfalseになった瞬間に<Image>を即座にアンマウントすると、ink-pictureの
@@ -31,14 +32,35 @@ export function PostImages({ images, expanded }: { images: ImageAttachment[]; ex
   }, [expanded])
 
   if (images.length === 0) return null
-  if (!mounted) return <Text dimColor>{Array(images.length).fill('🖼️').join(' ')}</Text>
 
   const columns = stdout.columns || 80
   const availableWidth = columns - HORIZONTAL_MARGIN
   const widthPerImage = Math.max(
     5,
-    Math.min(MAX_THUMB_WIDTH, Math.floor((availableWidth - GAP * (images.length - 1)) / images.length)),
+    Math.min(config.display.imageMaxWidth, Math.floor((availableWidth - GAP * (images.length - 1)) / images.length)),
   )
+
+  if (!config.display.showImages) return <Text dimColor>{Array(images.length).fill('🖼️').join(' ')}</Text>
+
+  if (!mounted) {
+    // 展開時と同じ高さを先頭画像のaspectRatioから予約しておくことで、展開/非展開の
+    // 切り替え(選択連動の遅延展開・スクロール中の一時非表示)で投稿の高さが変わって
+    // 全体がガクッとレイアウトシフトするのを防ぐ。
+    const height = calculateImageHeight(
+      widthPerImage,
+      images[0]?.aspectRatio,
+      terminalInfo.cellWidth,
+      terminalInfo.cellHeight,
+      THUMB_HEIGHT,
+      MIN_THUMB_HEIGHT,
+      MAX_THUMB_HEIGHT,
+    )
+    return (
+      <Box height={height} alignItems="center">
+        <Text dimColor>{Array(images.length).fill('🖼️').join(' ')}</Text>
+      </Box>
+    )
+  }
 
   return (
     <Box gap={GAP}>

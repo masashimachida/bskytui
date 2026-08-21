@@ -10,6 +10,8 @@ import { postWebUrl } from '../api/format.js'
 import { isSafeExternalUrl, sanitizeText } from '../api/sanitize.js'
 import { resolveListNavigation } from '../keymap/vim-list-keymap.js'
 import { resolveGlobalAction } from '../keymap/global-keymap.js'
+import { useConfig } from '../config/ConfigContext.js'
+import { useImageExpand } from '../navigation/useImageExpand.js'
 import { useTerminalRows } from '../navigation/useTerminalRows.js'
 import { useStatusMessage } from '../navigation/useStatusMessage.js'
 import type { StatusMessage } from '../navigation/useStatusMessage.js'
@@ -68,6 +70,10 @@ export function ProfileScreen({
   initialIndex,
   onStateChange,
   onQuote,
+  onSwitchTimeline,
+  onSwitchNotifications,
+  onSwitchFeeds,
+  onSwitchProfile,
   onStatusChange,
 }: {
   client: AtpClient
@@ -81,8 +87,13 @@ export function ProfileScreen({
   initialIndex: number
   onStateChange: (state: { items: TimelineItem[]; cursor: string | undefined; index: number }) => void
   onQuote: (post: PostSummary) => void
+  onSwitchTimeline: () => void
+  onSwitchNotifications: () => void
+  onSwitchFeeds: () => void
+  onSwitchProfile: () => void
   onStatusChange: (message: StatusMessage | null) => void
 }) {
+  const config = useConfig()
   const [profile, setProfile] = useState<ProfileData>()
   const [profileError, setProfileError] = useState<string>()
 
@@ -164,10 +175,12 @@ export function ProfileScreen({
 
   useStatusMessage(onStatusChange, !profile || feedLoading || isLoadingMore ? '読み込み中...' : undefined, profileError ?? feedError)
 
+  const imageExpand = useImageExpand(config.display.imageExpand, index, (items[index]?.post.images.length ?? 0) > 0)
+
   useInput(
     (input, key) => {
-      if (key.escape || input === 'h') {
-        onBack()
+      if (key.escape || input === config.keymap.back) {
+        imageExpand.collapseBeforeAction(onBack)
         return
       }
       if (feedError && items.length === 0) {
@@ -190,7 +203,7 @@ export function ProfileScreen({
         }
       }
 
-      const nav = resolveListNavigation(input, key)
+      const nav = resolveListNavigation(input, key, config.keymap)
       if (nav === 'down') {
         setIndex((i) => {
           const next = Math.min(items.length - 1, i + 1)
@@ -212,10 +225,27 @@ export function ProfileScreen({
         return
       }
 
+      const action = resolveGlobalAction(input, key, config.keymap)
+      if (action === 'switch-timeline') {
+        imageExpand.collapseBeforeAction(onSwitchTimeline)
+        return
+      }
+      if (action === 'switch-notifications') {
+        imageExpand.collapseBeforeAction(onSwitchNotifications)
+        return
+      }
+      if (action === 'switch-feeds') {
+        imageExpand.collapseBeforeAction(onSwitchFeeds)
+        return
+      }
+      if (action === 'switch-profile') {
+        imageExpand.collapseBeforeAction(onSwitchProfile)
+        return
+      }
+
       const current = items[index]
       if (!current) return
-      const action = resolveGlobalAction(input, key)
-      if (action === 'open-thread') onOpenThread(current.post.uri)
+      if (action === 'open-thread') imageExpand.collapseBeforeAction(() => onOpenThread(current.post.uri))
       if (action === 'reply') onReply(current.post)
       if (action === 'open-link') {
         if (current.post.linkCard && isSafeExternalUrl(current.post.linkCard.uri)) open(current.post.linkCard.uri).catch(() => {})
@@ -345,13 +375,13 @@ export function ProfileScreen({
           items={items}
           selectedIndex={index}
           availableRows={availableRows}
-          isSelectedExpanded={false}
+          isSelectedExpanded={imageExpand.isExpanded(true)}
           getKey={(item) => item.post.uri}
-          renderItem={(item, selected) => (
+          renderItem={(item, selected, suppressImages) => (
             <PostItem
               post={item.post}
               selected={selected}
-              expanded={false}
+              expanded={!suppressImages && imageExpand.isExpanded(selected)}
               repostedByHandle={item.repostedBy?.handle}
               replyToHandle={item.replyToHandle}
               connectsToNext={item.connectsToNext}

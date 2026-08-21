@@ -16,6 +16,8 @@ import { postWebUrl } from '../api/format.js'
 import { isSafeExternalUrl } from '../api/sanitize.js'
 import { resolveListNavigation } from '../keymap/vim-list-keymap.js'
 import { resolveGlobalAction } from '../keymap/global-keymap.js'
+import { useConfig } from '../config/ConfigContext.js'
+import { useImageExpand } from '../navigation/useImageExpand.js'
 import { useTerminalRows } from '../navigation/useTerminalRows.js'
 import { useStatusMessage } from '../navigation/useStatusMessage.js'
 import type { StatusMessage } from '../navigation/useStatusMessage.js'
@@ -37,6 +39,9 @@ export function TimelineScreen({
   onCompose,
   onOpenProfile,
   onQuote,
+  onSwitchNotifications,
+  onSwitchFeeds,
+  onSwitchProfile,
   onStatusChange,
 }: {
   client: AtpClient
@@ -50,8 +55,12 @@ export function TimelineScreen({
   onCompose: () => void
   onOpenProfile: (actor?: string) => void
   onQuote: (post: PostSummary) => void
+  onSwitchNotifications: () => void
+  onSwitchFeeds: () => void
+  onSwitchProfile: () => void
   onStatusChange: (message: StatusMessage | null) => void
 }) {
+  const config = useConfig()
   const [items, setItems] = useState<TimelineItem[]>(initialItems)
   const [cursor, setCursor] = useState<string | undefined>(initialCursor)
   const [index, setIndex] = useState(initialIndex)
@@ -135,6 +144,26 @@ export function TimelineScreen({
     }
   }, [client])
 
+  const performDelete = useCallback(
+    (post: PostSummary) => {
+      deletePost(client, post)
+        .then(() => {
+          setItems((prev) => {
+            const next = prev.filter((it) => it.post.uri !== post.uri)
+            setIndex((i) => Math.min(i, Math.max(0, next.length - 1)))
+            return next
+          })
+          setActionError(undefined)
+        })
+        .catch(() => {
+          setActionError('削除に失敗しました')
+        })
+    },
+    [client],
+  )
+
+  const imageExpand = useImageExpand(config.display.imageExpand, index, (items[index]?.post.images.length ?? 0) > 0)
+
   useEffect(() => {
     if (initialItems.length === 0) {
       loadMore()
@@ -172,7 +201,7 @@ export function TimelineScreen({
         return
       }
 
-      const nav = resolveListNavigation(input, key)
+      const nav = resolveListNavigation(input, key, config.keymap)
       if (nav === 'down') {
         setIndex((i) => {
           const next = Math.min(items.length - 1, i + 1)
@@ -198,14 +227,26 @@ export function TimelineScreen({
         return
       }
 
-      const action = resolveGlobalAction(input, key)
+      const action = resolveGlobalAction(input, key, config.keymap)
+      if (action === 'switch-notifications') {
+        imageExpand.collapseBeforeAction(onSwitchNotifications)
+        return
+      }
+      if (action === 'switch-feeds') {
+        imageExpand.collapseBeforeAction(onSwitchFeeds)
+        return
+      }
+      if (action === 'switch-profile') {
+        imageExpand.collapseBeforeAction(onSwitchProfile)
+        return
+      }
 
       const current = items[index]
       if (!current) return
-      if (action === 'open-thread') onOpenThread(current.post.uri)
+      if (action === 'open-thread') imageExpand.collapseBeforeAction(() => onOpenThread(current.post.uri))
       if (action === 'reply') onReply(current.post)
       if (action === 'compose') onCompose()
-      if (action === 'view-author') onOpenProfile(current.post.author.did)
+      if (action === 'view-author') imageExpand.collapseBeforeAction(() => onOpenProfile(current.post.author.did))
       if (action === 'open-link') {
         if (current.post.linkCard && isSafeExternalUrl(current.post.linkCard.uri)) open(current.post.linkCard.uri).catch(() => {})
       }
@@ -214,7 +255,11 @@ export function TimelineScreen({
       }
       if (action === 'delete') {
         if (current.post.author.did === client.did) {
-          setConfirmAction({ type: 'delete', post: current.post })
+          if (config.behavior.confirmDelete) {
+            setConfirmAction({ type: 'delete', post: current.post })
+          } else {
+            performDelete(current.post)
+          }
         }
       }
       if (action === 'like') {
@@ -239,18 +284,7 @@ export function TimelineScreen({
         if (!action) return
         setConfirmAction(null)
         if (action.type === 'delete') {
-          deletePost(client, action.post)
-            .then(() => {
-              setItems((prev) => {
-                const next = prev.filter((it) => it.post.uri !== action.post.uri)
-                setIndex((i) => Math.min(i, Math.max(0, next.length - 1)))
-                return next
-              })
-              setActionError(undefined)
-            })
-            .catch(() => {
-              setActionError('削除に失敗しました')
-            })
+          performDelete(action.post)
         }
         if (action.type === 'repost') {
           toggleRepost(client, action.post)
@@ -285,13 +319,13 @@ export function TimelineScreen({
         items={items}
         selectedIndex={index}
         availableRows={availableRows}
-        isSelectedExpanded={false}
+        isSelectedExpanded={imageExpand.isExpanded(true)}
         getKey={(item) => item.post.uri}
-        renderItem={(item, selected) => (
+        renderItem={(item, selected, suppressImages) => (
           <PostItem
             post={item.post}
             selected={selected}
-            expanded={false}
+            expanded={!suppressImages && imageExpand.isExpanded(selected)}
             repostedByHandle={item.repostedBy?.handle}
             replyToHandle={item.replyToHandle}
             connectsToNext={item.connectsToNext}

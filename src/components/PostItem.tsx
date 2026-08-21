@@ -1,7 +1,8 @@
 import React from 'react'
 import { Box, Text } from 'ink'
 import { PostImages } from './PostImages.js'
-import { formatRelativeTime } from '../api/format.js'
+import { formatPostDate } from '../api/format.js'
+import { useConfig } from '../config/ConfigContext.js'
 import type { PostSummary } from '../api/types.js'
 
 export function PostItem({
@@ -32,6 +33,7 @@ export function PostItem({
   // インデント(showsReplyIndent)自体は文脈表示として維持する。
   showReplyMarker?: boolean
 }) {
+  const config = useConfig()
   const showsReplyIndent = !!replyToHandle && !repostedByHandle && replyIndent
   return (
     <Box
@@ -52,7 +54,7 @@ export function PostItem({
       <Box flexDirection="column" paddingLeft={showsReplyIndent || indent ? 2 : 0}>
         <Box>
           <Text bold color="yellow">{post.author.displayName ?? post.author.handle}</Text>
-          <Text color="#666666"> · {formatRelativeTime(post.createdAt)}</Text>
+          <Text color="#666666"> · {formatPostDate(post.createdAt, config.display.dateFormat)}</Text>
         </Box>
         <Text>{post.text}</Text>
         <PostImages images={post.images} expanded={expanded} />
@@ -62,7 +64,7 @@ export function PostItem({
             <Box>
               <Text bold>{post.quotedPost.author.displayName ?? post.quotedPost.author.handle}</Text>
               <Text color="#666666"> @{post.quotedPost.author.handle}</Text>
-              <Text color="#666666"> · {formatRelativeTime(post.quotedPost.createdAt)}</Text>
+              <Text color="#666666"> · {formatPostDate(post.quotedPost.createdAt, config.display.dateFormat)}</Text>
             </Box>
             <Text>{post.quotedPost.text}</Text>
           </Box>

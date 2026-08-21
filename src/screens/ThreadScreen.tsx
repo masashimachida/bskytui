@@ -10,14 +10,14 @@ import { isSafeExternalUrl } from '../api/sanitize.js'
 import { toggleLike, toggleRepost } from '../api/client.js'
 import { resolveListNavigation } from '../keymap/vim-list-keymap.js'
 import { resolveGlobalAction } from '../keymap/global-keymap.js'
+import { useConfig } from '../config/ConfigContext.js'
+import { useImageExpand } from '../navigation/useImageExpand.js'
 import { useTerminalRows } from '../navigation/useTerminalRows.js'
 import { useStatusMessage } from '../navigation/useStatusMessage.js'
 import type { StatusMessage } from '../navigation/useStatusMessage.js'
 import type { ConfirmAction } from './confirm-action.js'
 import type { AtpClient } from '../api/atp-client.js'
 import type { PostSummary } from '../api/types.js'
-
-const EXPAND_DELAY_MS = 100
 
 interface ThreadNode {
   post?: unknown
@@ -87,36 +87,14 @@ export function ThreadScreen({
   onSwitchProfile: () => void
   onStatusChange: (message: StatusMessage | null) => void
 }) {
+  const config = useConfig()
   const [posts, setPosts] = useState<PostSummary[]>(initialPosts)
   const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null)
   const [index, setIndex] = useState(initialIndex)
   const [focusUri, setFocusUri] = useState<string | undefined>(() => initialPosts[initialIndex]?.uri)
-  const [expandedIndex, setExpandedIndex] = useState<number | null>(null)
-  const isExpanded = expandedIndex !== null && expandedIndex === index
   const [loading, setLoading] = useState(initialPosts.length === 0)
   const [error, setError] = useState<string>()
-  const expandTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  // 画像が展開されたまま画面遷移すると、直接stdout書き込みで描画された画像がInkの
-  // 通常描画パイプラインとのタイミング競合で消えずに残ってしまう(ink-pictureの
-  // useDirectRenderer方式の既知の制約)。画像を閉じるレンダーを1回挟んでから遷移
-  // コールバックを呼ぶことで、画像コンポーネントのアンマウント処理を画面遷移より
-  // 先に完了させる。
-  const pendingActionRef = useRef<(() => void) | null>(null)
-  useEffect(() => {
-    if (pendingActionRef.current && !isExpanded) {
-      const fn = pendingActionRef.current
-      pendingActionRef.current = null
-      fn()
-    }
-  }, [isExpanded])
-  function runAfterCollapse(fn: () => void) {
-    if (isExpanded) {
-      pendingActionRef.current = fn
-      setExpandedIndex(null)
-    } else {
-      fn()
-    }
-  }
+  const imageExpand = useImageExpand(config.display.imageExpand, index, (posts[index]?.images.length ?? 0) > 0)
 
   useEffect(() => {
     if (initialPosts.length > 0) {
@@ -158,34 +136,10 @@ export function ThreadScreen({
 
   useStatusMessage(onStatusChange, loading ? '読み込み中...' : undefined, error)
 
-  // TimelineScreenと同じ理由でdebounce化(詳細はそちらのコメント参照)
-  const hasPosts = posts.length > 0
-
-  useEffect(() => {
-    setExpandedIndex(null)
-    if (expandTimeoutRef.current) {
-      clearTimeout(expandTimeoutRef.current)
-      expandTimeoutRef.current = null
-    }
-    const current = posts[index]
-    if (!current || current.images.length === 0) return
-    expandTimeoutRef.current = setTimeout(() => {
-      expandTimeoutRef.current = null
-      setExpandedIndex(index)
-    }, EXPAND_DELAY_MS)
-    return () => {
-      if (expandTimeoutRef.current) {
-        clearTimeout(expandTimeoutRef.current)
-        expandTimeoutRef.current = null
-      }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [index, hasPosts])
-
   useInput(
     (input, key) => {
-      if (key.escape || input === 'h') {
-        runAfterCollapse(onBack)
+      if (key.escape || input === config.keymap.back) {
+        imageExpand.collapseBeforeAction(onBack)
         return
       }
       if (error && posts.length === 0) {
@@ -193,7 +147,7 @@ export function ThreadScreen({
         return
       }
 
-      const nav = resolveListNavigation(input, key)
+      const nav = resolveListNavigation(input, key, config.keymap)
       if (nav === 'down') {
         setIndex((i) => Math.min(posts.length - 1, i + 1))
         return
@@ -211,27 +165,27 @@ export function ThreadScreen({
         return
       }
 
-      const action = resolveGlobalAction(input, key)
+      const action = resolveGlobalAction(input, key, config.keymap)
       if (action === 'switch-timeline') {
-        runAfterCollapse(onSwitchTimeline)
+        imageExpand.collapseBeforeAction(onSwitchTimeline)
         return
       }
       if (action === 'switch-notifications') {
-        runAfterCollapse(onSwitchNotifications)
+        imageExpand.collapseBeforeAction(onSwitchNotifications)
         return
       }
       if (action === 'switch-feeds') {
-        runAfterCollapse(onSwitchFeeds)
+        imageExpand.collapseBeforeAction(onSwitchFeeds)
         return
       }
       if (action === 'switch-profile') {
-        runAfterCollapse(onSwitchProfile)
+        imageExpand.collapseBeforeAction(onSwitchProfile)
         return
       }
 
       const current = posts[index]
       if (!current) return
-      if (action === 'reply') runAfterCollapse(() => onReply(current, posts[0] ?? current))
+      if (action === 'reply') imageExpand.collapseBeforeAction(() => onReply(current, posts[0] ?? current))
       if (action === 'view-author') onOpenProfile(current.author.did)
       if (action === 'open-link') {
         if (current.linkCard && isSafeExternalUrl(current.linkCard.uri)) open(current.linkCard.uri).catch(() => {})
@@ -248,7 +202,7 @@ export function ThreadScreen({
         setConfirmAction({ type: 'repost', post: current })
       }
       if (action === 'quote') {
-        runAfterCollapse(() => onQuote(current))
+        imageExpand.collapseBeforeAction(() => onQuote(current))
       }
     },
     { isActive: active && !confirmAction },
@@ -293,10 +247,15 @@ export function ThreadScreen({
         items={posts}
         selectedIndex={index}
         availableRows={availableRows}
-        isSelectedExpanded={isExpanded}
+        isSelectedExpanded={imageExpand.isExpanded(true)}
         getKey={(post) => post.uri}
-        renderItem={(post, selected) => (
-          <PostItem post={post} selected={selected} expanded={selected && isExpanded} indent={post.uri !== focusUri} />
+        renderItem={(post, selected, suppressImages) => (
+          <PostItem
+            post={post}
+            selected={selected}
+            expanded={!suppressImages && imageExpand.isExpanded(selected)}
+            indent={post.uri !== focusUri}
+          />
         )}
       />
       {confirmAction?.type === 'repost' && (

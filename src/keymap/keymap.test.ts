@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { resolveListNavigation } from './vim-list-keymap.js'
 import { resolveGlobalAction } from './global-keymap.js'
 import type { InkKey } from './types.js'
+import { DEFAULT_KEYMAP } from '../config/defaults.js'
 
 const NO_KEY: InkKey = {
   upArrow: false,
@@ -34,6 +35,12 @@ describe('resolveListNavigation', () => {
 
   it('該当しない入力はnull', () => {
     expect(resolveListNavigation('x', NO_KEY)).toBeNull()
+  })
+
+  it('カスタムkeymapが指定された場合はそちらを使う', () => {
+    const custom = { ...DEFAULT_KEYMAP, listDown: 'z' }
+    expect(resolveListNavigation('z', NO_KEY, custom)).toBe('down')
+    expect(resolveListNavigation('j', NO_KEY, custom)).toBeNull()
   })
 })
 
@@ -69,5 +76,11 @@ describe('resolveGlobalAction', () => {
 
   it('該当しない入力はnull', () => {
     expect(resolveGlobalAction('z', NO_KEY)).toBeNull()
+  })
+
+  it('カスタムkeymapが指定された場合はそちらを使う', () => {
+    const custom = { ...DEFAULT_KEYMAP, like: 'L' }
+    expect(resolveGlobalAction('L', NO_KEY, custom)).toBe('like')
+    expect(resolveGlobalAction('f', NO_KEY, custom)).toBeNull()
   })
 })

@@ -3,6 +3,7 @@ import { Box, Text, useInput, useStdout } from 'ink'
 import Image from 'ink-picture'
 import { StatusBar } from '../components/StatusBar.js'
 import { resolveGlobalAction } from '../keymap/global-keymap.js'
+import { useConfig } from '../config/ConfigContext.js'
 import type { ImageAttachment } from '../api/types.js'
 
 const STATUS_BAR_ROWS = 3 // top border + content + bottom border
@@ -18,11 +19,12 @@ export function ImageViewScreen({
   initialIndex: number
   onBack: () => void
 }) {
+  const config = useConfig()
   const [index, setIndex] = useState(initialIndex)
   const { stdout } = useStdout()
 
   useInput((input, key) => {
-    const action = resolveGlobalAction(input, key)
+    const action = resolveGlobalAction(input, key, config.keymap)
     if (action === 'back') {
       onBack()
       return
@@ -70,7 +72,7 @@ export function ImageViewScreen({
           {index + 1}/{images.length}
         </Text>
       )}
-      <StatusBar hint="←/→:画像切替 Esc/h:戻る" />
+      <StatusBar hint={`←/→:画像切替 Esc/${config.keymap.back}:戻る`} />
     </Box>
   )
 }

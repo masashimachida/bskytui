@@ -188,6 +188,20 @@ export function formatRelativeTime(createdAt: string, now: Date = new Date()): s
   return `${y}/${m}/${d}`
 }
 
+export function formatAbsoluteTime(createdAt: string): string {
+  const created = new Date(createdAt)
+  const y = created.getFullYear()
+  const m = String(created.getMonth() + 1).padStart(2, '0')
+  const d = String(created.getDate()).padStart(2, '0')
+  const hh = String(created.getHours()).padStart(2, '0')
+  const mm = String(created.getMinutes()).padStart(2, '0')
+  return `${y}/${m}/${d} ${hh}:${mm}`
+}
+
+export function formatPostDate(createdAt: string, dateFormat: 'relative' | 'absolute', now?: Date): string {
+  return dateFormat === 'absolute' ? formatAbsoluteTime(createdAt) : formatRelativeTime(createdAt, now)
+}
+
 export function toAuthor(raw: RawAuthor): Author {
   return {
     did: raw.did,

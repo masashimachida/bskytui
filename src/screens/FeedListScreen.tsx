@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { Box, Text, useInput } from 'ink'
 import { fetchSavedFeeds } from '../api/client.js'
 import { resolveListNavigation } from '../keymap/vim-list-keymap.js'
+import { useConfig } from '../config/ConfigContext.js'
 import { useStatusMessage } from '../navigation/useStatusMessage.js'
 import type { StatusMessage } from '../navigation/useStatusMessage.js'
 import type { AtpClient } from '../api/atp-client.js'
@@ -18,6 +19,7 @@ export function FeedListScreen({
   onOpenFeed: (feed: FeedInfo) => void
   onStatusChange: (message: StatusMessage | null) => void
 }) {
+  const config = useConfig()
   const [feeds, setFeeds] = useState<FeedInfo[]>()
   const [error, setError] = useState<string>()
   const [index, setIndex] = useState(0)
@@ -54,7 +56,7 @@ export function FeedListScreen({
         return
       }
       if (!feeds || feeds.length === 0) return
-      const nav = resolveListNavigation(input, key)
+      const nav = resolveListNavigation(input, key, config.keymap)
       if (nav === 'down') {
         setIndex((i) => Math.min(feeds.length - 1, i + 1))
         return

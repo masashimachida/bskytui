@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import { toAuthor, toPostSummary, toTimelineItems, toNotificationItem, formatRelativeTime, postWebUrl } from './format.js'
+import {
+  toAuthor,
+  toPostSummary,
+  toTimelineItems,
+  toNotificationItem,
+  formatRelativeTime,
+  formatAbsoluteTime,
+  formatPostDate,
+  postWebUrl,
+} from './format.js'
 
 const rawAuthor = {
   did: 'did:plc:abc',
@@ -503,6 +512,26 @@ describe('formatRelativeTime', () => {
     const createdAt = '2026-07-01T00:00:00.000Z'
     const now = new Date('2026-08-02T00:00:00.000Z')
     expect(formatRelativeTime(createdAt, now)).toBe('2026/07/01')
+  })
+})
+
+describe('formatAbsoluteTime', () => {
+  it('「YYYY/MM/DD HH:mm」形式で返す(ローカル時刻)', () => {
+    const createdAt = new Date(2026, 6, 1, 9, 5).toISOString()
+    expect(formatAbsoluteTime(createdAt)).toBe('2026/07/01 09:05')
+  })
+})
+
+describe('formatPostDate', () => {
+  const createdAt = new Date(2026, 6, 1, 9, 5).toISOString()
+
+  it('dateFormatがabsoluteならformatAbsoluteTimeと同じ結果', () => {
+    expect(formatPostDate(createdAt, 'absolute')).toBe(formatAbsoluteTime(createdAt))
+  })
+
+  it('dateFormatがrelativeならformatRelativeTimeと同じ結果', () => {
+    const now = new Date('2026-08-01T00:00:30.000Z')
+    expect(formatPostDate(createdAt, 'relative', now)).toBe(formatRelativeTime(createdAt, now))
   })
 })
 
