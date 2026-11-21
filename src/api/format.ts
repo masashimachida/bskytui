@@ -158,11 +158,29 @@ interface RawNotification {
   author: RawAuthor
   reason: string
   reasonSubject?: string
+  record?: unknown
   isRead: boolean
   indexedAt: string
 }
 
-const KNOWN_NOTIFICATION_REASONS = ['like', 'repost', 'follow', 'mention', 'reply', 'quote'] as const
+const KNOWN_NOTIFICATION_REASONS = [
+  'like',
+  'repost',
+  'like-via-repost',
+  'repost-via-repost',
+  'follow',
+  'mention',
+  'reply',
+  'quote',
+] as const
+
+function recordSubjectUriOf(record: unknown): string | undefined {
+  if (typeof record !== 'object' || record === null) return undefined
+  const subject = (record as { subject?: unknown }).subject
+  if (typeof subject !== 'object' || subject === null) return undefined
+  const uri = (subject as { uri?: unknown }).uri
+  return typeof uri === 'string' ? uri : undefined
+}
 
 // Bluesky CDN（cdn.bsky.app）の画像URLは拡張子サフィックス（@jpeg等）を付けずにリクエストすると
 // WebP形式で返ってくる。依存ライブラリink-pictureが使うJimpはデフォルトでWebPデコードに対応していないため、
@@ -290,6 +308,7 @@ export function toNotificationItem(n: RawNotification): NotificationItem {
     author: toAuthor(n.author),
     reason: isKnown ? (n.reason as NotificationItem['reason']) : 'other',
     reasonSubjectUri: n.reasonSubject,
+    recordSubjectUri: recordSubjectUriOf(n.record),
     isRead: n.isRead,
     indexedAt: n.indexedAt,
   }

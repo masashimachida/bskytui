@@ -4,7 +4,7 @@ import open from 'open'
 import { PostItem } from '../components/PostItem.js'
 import { ConfirmDialog } from '../components/ConfirmDialog.js'
 import { ScrollingViewport, OVERHEAD_ROWS } from '../components/ScrollingViewport.js'
-import { fetchNotifications, toggleRepost } from '../api/client.js'
+import { REACTION_NOTIFICATION_REASONS, fetchNotifications, toggleRepost } from '../api/client.js'
 import { resolveListNavigation } from '../keymap/vim-list-keymap.js'
 import { resolveGlobalAction } from '../keymap/global-keymap.js'
 import { formatPostDate, postWebUrl } from '../api/format.js'
@@ -21,6 +21,8 @@ import type { NotificationItem, PostSummary } from '../api/types.js'
 const REASON_LABEL: Record<NotificationItem['reason'], string> = {
   like: 'があなたの投稿をいいねしました',
   repost: 'があなたの投稿をリポストしました',
+  'like-via-repost': 'があなたのリポストをいいねしました',
+  'repost-via-repost': 'があなたのリポストをリポストしました',
   follow: 'があなたをフォローしました',
   mention: 'あなたにメンション',
   reply: '返信しました',
@@ -175,7 +177,8 @@ export function NotificationsScreen({
       if (action === 'open-thread') {
         const current = items[index]
         const canOpen =
-          current && (current.reason === 'like' || current.reason === 'repost' || current.reason === 'quote' || current.reason === 'reply')
+          current &&
+          (REACTION_NOTIFICATION_REASONS.includes(current.reason) || current.reason === 'quote' || current.reason === 'reply')
         if (canOpen && current.subjectPost) imageExpand.collapseBeforeAction(() => onOpenThread(current.subjectPost!.uri))
         return
       }
@@ -274,7 +277,7 @@ export function NotificationsScreen({
                   <Text color="#666666"> · {formatPostDate(item.indexedAt, config.display.dateFormat)}</Text>
                 </Box>
               )}
-              {(item.reason === 'like' || item.reason === 'repost') && item.subjectPost && (
+              {REACTION_NOTIFICATION_REASONS.includes(item.reason) && item.subjectPost && (
                 <Box
                   flexDirection="column"
                   width="100%"

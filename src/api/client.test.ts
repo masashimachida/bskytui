@@ -204,6 +204,62 @@ describe('fetchNotifications', () => {
     expect(page.items[1].subjectPost?.text).toBe('text of at://p/reposted')
   })
 
+  it('like-via-repost/repost-via-repost通知はrecord.subjectの元投稿をsubjectPostとして取得する', async () => {
+    const notifications = [
+      {
+        uri: 'at://n/1',
+        author,
+        reason: 'like-via-repost',
+        reasonSubject: 'at://me/app.bsky.feed.repost/r1',
+        record: { subject: { uri: 'at://p/original1', cid: 'c1' }, via: { uri: 'at://me/app.bsky.feed.repost/r1', cid: 'c2' } },
+        isRead: false,
+        indexedAt: '2026-08-01T00:00:00.000Z',
+      },
+      {
+        uri: 'at://n/2',
+        author,
+        reason: 'repost-via-repost',
+        reasonSubject: 'at://me/app.bsky.feed.repost/r2',
+        record: { subject: { uri: 'at://p/original2', cid: 'c3' }, via: { uri: 'at://me/app.bsky.feed.repost/r2', cid: 'c4' } },
+        isRead: false,
+        indexedAt: '2026-08-01T00:00:00.000Z',
+      },
+    ]
+    const getPosts = vi.fn(async ({ uris }: { uris: string[] }) => ({
+      data: { posts: uris.map((uri) => ({ ...rawPost, uri, record: { text: `text of ${uri}`, createdAt: rawPost.record.createdAt } })) },
+    }))
+    const client = fakeClient({
+      listNotifications: vi.fn(async () => ({ data: { cursor: undefined, notifications } })) as never,
+      getPosts: getPosts as never,
+    })
+    const page = await fetchNotifications(client)
+    expect(getPosts).toHaveBeenCalledWith({ uris: ['at://p/original1', 'at://p/original2'] })
+    expect(page.items[0].reason).toBe('like-via-repost')
+    expect(page.items[0].subjectPost?.text).toBe('text of at://p/original1')
+    expect(page.items[1].reason).toBe('repost-via-repost')
+    expect(page.items[1].subjectPost?.text).toBe('text of at://p/original2')
+  })
+
+  it('like-via-repost通知で元投稿が取得できない(削除済み等)場合は除外する', async () => {
+    const notifications = [
+      {
+        uri: 'at://n/1',
+        author,
+        reason: 'like-via-repost',
+        reasonSubject: 'at://me/app.bsky.feed.repost/r1',
+        record: { subject: { uri: 'at://p/deleted', cid: 'c1' } },
+        isRead: false,
+        indexedAt: '2026-08-01T00:00:00.000Z',
+      },
+    ]
+    const client = fakeClient({
+      listNotifications: vi.fn(async () => ({ data: { cursor: undefined, notifications } })) as never,
+      getPosts: vi.fn(async () => ({ data: { posts: [] } })) as never,
+    })
+    const page = await fetchNotifications(client)
+    expect(page.items).toEqual([])
+  })
+
   it('quote通知は通知自体のuriの投稿をsubjectPostとして取得する', async () => {
     const notifications = [
       { uri: 'at://n/quote1', author, reason: 'quote', isRead: false, indexedAt: '2026-08-01T00:00:00.000Z' },
@@ -781,6 +837,16 @@ describe('groupNotificationItems', () => {
     ]
     const result = groupNotificationItems(items)
     expect(result).toHaveLength(2)
+  })
+
+  it('同じリポストへのlike-via-repost通知は1件にグルーピングされる', () => {
+    const items: NotificationItem[] = [
+      makeNotification({ uri: 'at://n/1', reason: 'like-via-repost', reasonSubjectUri: 'at://me/repost/1', author: { did: 'did:plc:a', handle: 'a.bsky.social' } }),
+      makeNotification({ uri: 'at://n/2', reason: 'like-via-repost', reasonSubjectUri: 'at://me/repost/1', author: { did: 'did:plc:b', handle: 'b.bsky.social' } }),
+    ]
+    const result = groupNotificationItems(items)
+    expect(result).toHaveLength(1)
+    expect(result[0].additionalAuthors?.map((a) => a.did)).toEqual(['did:plc:b'])
   })
 
   it('reply/mention/quote/otherはグルーピング対象外(常に個別のまま)', () => {

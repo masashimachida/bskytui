@@ -5,8 +5,13 @@ import type { FeedInfo, NotificationItem, PostSummary, TimelineItem } from './ty
 
 const GET_POSTS_CHUNK_SIZE = 25
 
+// 自分の投稿/リポストへの反応(いいね・リポスト)系の通知。subjectPostとして元投稿を表示する。
+export const REACTION_NOTIFICATION_REASONS: NotificationItem['reason'][] = ['like', 'repost', 'like-via-repost', 'repost-via-repost']
+
 function subjectUriForNotification(n: NotificationItem): string | undefined {
   if (n.reason === 'like' || n.reason === 'repost') return n.reasonSubjectUri
+  // reasonSubjectは自分のリポストレコードを指すので、元投稿はlike/repostレコードのsubjectから辿る
+  if (n.reason === 'like-via-repost' || n.reason === 'repost-via-repost') return n.recordSubjectUri
   if (n.reason === 'quote' || n.reason === 'reply') return n.uri
   return undefined
 }
@@ -148,7 +153,7 @@ export function countNewTimelineItems(
   return dedupeTimelineItems(newPageItems, dryRunSeenUris, dryRunSeenRootUris).length
 }
 
-const GROUPABLE_NOTIFICATION_REASONS: NotificationItem['reason'][] = ['like', 'repost', 'follow']
+const GROUPABLE_NOTIFICATION_REASONS: NotificationItem['reason'][] = [...REACTION_NOTIFICATION_REASONS, 'follow']
 
 // Bluesky公式Web版(bluesky-social/social-app)のgroupNotificationsを参考にした簡易版。
 // 同じ対象(reasonSubjectUri)への同種の反応(like/repost/follow)を1件にまとめ、
@@ -195,7 +200,7 @@ export async function fetchNotifications(client: AtpClient, cursor?: string): Pr
       })
       .filter((item) => {
         const subjectUri = subjectUriForNotification(item)
-        return !((item.reason === 'like' || item.reason === 'repost') && subjectUri && !item.subjectPost)
+        return !(REACTION_NOTIFICATION_REASONS.includes(item.reason) && subjectUri && !item.subjectPost)
       })
     return { items: enriched, cursor: res.data.cursor }
   } catch {

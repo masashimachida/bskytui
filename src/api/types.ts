@@ -72,8 +72,11 @@ export interface FeedInfo {
 export interface NotificationItem {
   uri: string
   author: Author
-  reason: 'like' | 'repost' | 'follow' | 'mention' | 'reply' | 'quote' | 'other'
+  reason: 'like' | 'repost' | 'like-via-repost' | 'repost-via-repost' | 'follow' | 'mention' | 'reply' | 'quote' | 'other'
   reasonSubjectUri?: string
+  // 通知元レコード(like/repost)のsubject.uri。like-via-repost/repost-via-repostでは
+  // reasonSubjectが「自分のリポストレコード」を指すため、元投稿はこちらから辿る。
+  recordSubjectUri?: string
   isRead: boolean
   indexedAt: string
   subjectPost?: PostSummary

@@ -557,6 +557,32 @@ describe('toNotificationItem', () => {
   })
 })
 
+describe('toNotificationItem (via-repost)', () => {
+  it('like-via-repost/repost-via-repostはreasonを保持し、record.subject.uriをrecordSubjectUriに入れる', () => {
+    const item = toNotificationItem({
+      uri: 'at://x/1',
+      author: rawAuthor,
+      reason: 'like-via-repost',
+      reasonSubject: 'at://me/app.bsky.feed.repost/r1',
+      record: { subject: { uri: 'at://p/original', cid: 'c1' }, via: { uri: 'at://me/app.bsky.feed.repost/r1', cid: 'c2' } },
+      isRead: false,
+      indexedAt: '2026-08-01T00:00:00.000Z',
+    })
+    expect(item.reason).toBe('like-via-repost')
+    expect(item.recordSubjectUri).toBe('at://p/original')
+
+    const repost = toNotificationItem({
+      uri: 'at://x/2',
+      author: rawAuthor,
+      reason: 'repost-via-repost',
+      isRead: false,
+      indexedAt: '2026-08-01T00:00:00.000Z',
+    })
+    expect(repost.reason).toBe('repost-via-repost')
+    expect(repost.recordSubjectUri).toBeUndefined()
+  })
+})
+
 describe('postWebUrl', () => {
   it('uriのrkeyとauthorのhandleからBluesky Web版のURLを組み立てる', () => {
     const post = { ...rawPostView, uri: 'at://did:plc:abc/app.bsky.feed.post/xyz123' }
